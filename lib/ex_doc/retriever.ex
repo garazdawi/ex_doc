@@ -249,7 +249,8 @@ defmodule ExDoc.Retriever do
       (doc_content && doc_ast(content_type, doc_content, file: source.path, line: doc_line + 1)) ||
         function_data.doc_fallback.()
 
-    group = GroupMatcher.match_function(groups_for_docs, metadata)
+    group = GroupMatcher.match_function(groups_for_docs, Map.merge(%{kind: type, name: name,
+                                                                     arity: arity, module: module_data.module}, metadata))
 
     %ExDoc.FunctionNode{
       id: nil_or_name(name, arity),
@@ -323,7 +324,8 @@ defmodule ExDoc.Retriever do
     doc_ast = doc_ast(content_type, doc, file: source.path, line: doc_line + 1)
 
     metadata = Map.put(metadata, :__doc__, :callback)
-    group = GroupMatcher.match_function(groups_for_docs, metadata)
+    group = GroupMatcher.match_function(groups_for_docs, Map.merge(%{kind: kind, name: name,
+                                                                     arity: arity, module: module_data.module},metadata))
 
     %ExDoc.FunctionNode{
       id: "c:" <> nil_or_name(name, arity),
@@ -355,7 +357,7 @@ defmodule ExDoc.Retriever do
 
   defp get_type(type_entry, source, groups_for_docs, module_data, annotations_for_docs) do
     {:docs_v1, _, _, content_type, _, module_metadata, _} = module_data.docs
-    {{_, name, arity}, anno, _signature, doc, metadata} = type_entry
+    {{kind, name, arity}, anno, _signature, doc, metadata} = type_entry
     doc_line = anno_line(anno)
     source = anno_file(anno, source)
     annotations = annotations_from_metadata(metadata, module_metadata)
@@ -367,7 +369,8 @@ defmodule ExDoc.Retriever do
     if type_data.type == :opaque, do: ["opaque" | annotations], else: annotations
     doc_ast = doc_ast(content_type, doc, file: source.path, line: doc_line + 1)
     metadata = Map.put(metadata, :__doc__, :type)
-    group = GroupMatcher.match_function(groups_for_docs, metadata)
+    group = GroupMatcher.match_function(groups_for_docs, Map.merge(%{kind: kind, name: name,
+                                                                     arity: arity, module: module_data.module}, metadata))
 
     %ExDoc.TypeNode{
       id: "t:" <> nil_or_name(name, arity),
