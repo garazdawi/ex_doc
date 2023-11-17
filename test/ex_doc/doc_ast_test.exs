@@ -135,7 +135,21 @@ defmodule ExDoc.DocASTTest do
                ~S[<pre class="wrap"><code class="">mix run --no-halt path/to/file.exs</code></pre>],
                ExDoc.Language.Elixir
              ) =~
-               ~r{<pre class="wrap"><code class=\"makeup elixir\" translate="no">.*}
+        ~r{<pre class="wrap"><code class=\"makeup elixir\" translate="no">.*}
+
+      # Pre id
+      assert DocAST.highlight(
+               ~S[<pre id="anchor"><code class="">mix run --no-halt path/to/file.exs</code></pre>],
+               ExDoc.Language.Elixir
+             ) =~
+        ~r{<pre id="anchor"><code class=\"makeup elixir\" translate="no">.*}
+
+      # Pre id and class
+      assert DocAST.highlight(
+               ~S[<pre id="anchor" class="wrap"><code class="">mix run --no-halt path/to/file.exs</code></pre>],
+               ExDoc.Language.Elixir
+             ) =~
+               ~r{<pre id="anchor" class="wrap"><code class=\"makeup elixir\" translate="no">.*}
 
       # IEx highlight with empty class
       assert DocAST.highlight(
