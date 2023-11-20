@@ -36,7 +36,7 @@ defmodule ExDoc.Mixfile do
     [
       {:earmark_parser, "~> 1.4.38"},
       {:makeup_elixir, "~> 0.14"},
-      {:makeup_erlang, "~> 0.1"},
+      {:makeup_erlang, git: "https://github.com/garazdawi/makeup_erlang.git", tag: "master"},
       # Add other makeup lexers as optional for the executable
       {:makeup_c, ">= 0.1.1", optional: true},
       {:makeup_html, ">= 0.0.0", only: :dev},
