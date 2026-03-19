@@ -1,0 +1,15 @@
+.LP
+.B
+<%= if node.source_specs != [] do %><%= for spec <- node.source_specs do %><%= format_spec(module.language.format_spec(spec)) %>
+<% end %><% else %>\fB<%= escape(to_string(node.name)) %>\fR
+<% end %>
+.br
+.RS
+<%= for annotation <- node.annotations do %>\fI<%= escape(to_string(annotation)) %>\fR
+<% end %>
+<%= if node.deprecated do %>.PP
+\fBDeprecated:\fR <%= escape(to_string(node.deprecated)) %>
+<% end %>
+<%= doc_to_roff(node.doc) %>
+
+.RE

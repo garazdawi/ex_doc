@@ -1,0 +1,7 @@
+.TH <%= extra.id %> <%= section %> "<%= config.project %> v<%= config.version %>" "<%= config.project %>"
+.SH NAME
+<%= escape(extra.title) %><%= if synopsis = synopsis_text(extra.doc) do %> \- <%= escape(synopsis) %><% end %>
+<%= if extra.doc do %>
+.SH DESCRIPTION
+<%= doc_to_roff(extra.doc) %>
+<% end %>

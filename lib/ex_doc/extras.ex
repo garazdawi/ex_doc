@@ -95,6 +95,8 @@ defmodule ExDoc.Extras do
     source_url = config.source_url_pattern.(source_path, 1)
     search_data = validate_search_data!(input_options[:search_data])
 
+    options = Map.take(input_options, [:man_section])
+
     %ExDoc.ExtraNode{
       type: extra_type(extension),
       source_doc: source,
@@ -105,7 +107,8 @@ defmodule ExDoc.Extras do
       source_url: source_url,
       search_data: search_data,
       title: title,
-      title_doc: title_doc || title
+      title_doc: title_doc || title,
+      options: options
     }
   end
 

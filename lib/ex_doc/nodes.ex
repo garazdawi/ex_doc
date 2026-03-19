@@ -123,7 +123,8 @@ defmodule ExDoc.ExtraNode do
             source_doc: nil,
             source_path: nil,
             source_url: nil,
-            search_data: nil
+            search_data: nil,
+            options: %{}
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -135,7 +136,8 @@ defmodule ExDoc.ExtraNode do
           source_doc: String.t(),
           source_path: String.t(),
           source_url: String.t(),
-          search_data: [map()] | nil
+          search_data: [map()] | nil,
+          options: map()
         }
 end
 

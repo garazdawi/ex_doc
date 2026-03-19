@@ -1,0 +1,19 @@
+.TH <%= module.id %> <%= if module.type == :task, do: "1", else: "3" %> "<%= config.project %> v<%= config.version %>" "<%= config.project %>"
+.SH NAME
+<%= escape(module.title) %><%= if synopsis = synopsis_text(module.doc) do %> \- <%= escape(synopsis) %><% end %>
+<%= if module.deprecated do %>
+.PP
+\fBDeprecated:\fR <%= escape(to_string(module.deprecated)) %>
+<% end %>
+<%= if module.doc do %>
+.SH DESCRIPTION
+<%= doc_to_roff(module.doc) %>
+<% end %>
+<%= for group <- module.docs_groups do %>
+<%= if group.docs != [] do %>
+.SH <%= group_section_title(group.title) %>
+<%= for node <- group.docs do %>
+<%= detail_template(node, module) %>
+<% end %>
+<% end %>
+<% end %>

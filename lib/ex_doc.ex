@@ -103,6 +103,10 @@ defmodule ExDoc do
 
     * `:formatters` - Formatter to use; default: ["html", "markdown", "epub"], options: "html", "markdown", "epub".
 
+    * `:man` - Controls which modules get man pages. `:all` (default) generates for all modules,
+      `:tasks` generates only for mix tasks (section 1), `false` skips module man pages entirely.
+      Extra pages only get man pages when their `:man_section` option is explicitly set.
+
     * `:footer` - When false, does not render the footer on all pages, except for
       the required "Built with ExDoc" note.
 
