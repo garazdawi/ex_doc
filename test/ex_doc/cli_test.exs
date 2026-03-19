@@ -24,28 +24,19 @@ defmodule ExDoc.CLITest do
   end
 
   test "minimum command-line options" do
-    {[html, epub, markdown], _io} = run(["ExDoc", "1.2.3", @ebin])
+    {[html, epub, man, markdown], _io} = run(["ExDoc", "1.2.3", @ebin])
 
-    assert html ==
-             {"ExDoc", "1.2.3", [@ebin],
-              [
-                formatters: ["html", "markdown", "epub"],
-                apps: [:ex_doc]
-              ]}
+    expected_config =
+      {"ExDoc", "1.2.3", [@ebin],
+       [
+         formatters: ["html", "markdown", "man", "epub"],
+         apps: [:ex_doc]
+       ]}
 
-    assert epub ==
-             {"ExDoc", "1.2.3", [@ebin],
-              [
-                formatters: ["html", "markdown", "epub"],
-                apps: [:ex_doc]
-              ]}
-
-    assert markdown ==
-             {"ExDoc", "1.2.3", [@ebin],
-              [
-                formatters: ["html", "markdown", "epub"],
-                apps: [:ex_doc]
-              ]}
+    assert html == expected_config
+    assert epub == expected_config
+    assert man == expected_config
+    assert markdown == expected_config
   end
 
   test "formatter option" do
@@ -79,13 +70,11 @@ defmodule ExDoc.CLITest do
   end
 
   test "multiple apps" do
-    {[{"ExDoc", "1.2.3", _, html}, {"ExDoc", "1.2.3", _, epub}, {"ExDoc", "1.2.3", _, markdown}],
-     _io} =
-      run(["ExDoc", "1.2.3", @ebin, @ebin2])
+    {results, _io} = run(["ExDoc", "1.2.3", @ebin, @ebin2])
 
-    assert [:ex_doc, :makeup] = Enum.sort(Keyword.get(html, :apps))
-    assert [:ex_doc, :makeup] = Enum.sort(Keyword.get(epub, :apps))
-    assert [:ex_doc, :makeup] = Enum.sort(Keyword.get(markdown, :apps))
+    for {"ExDoc", "1.2.3", _, opts} <- results do
+      assert [:ex_doc, :makeup] = Enum.sort(Keyword.get(opts, :apps))
+    end
   end
 
   test "arguments that are not aliased" do

@@ -195,7 +195,7 @@ defmodule Mix.Tasks.Docs do
   defp normalize_formatters(options) do
     formatters =
       case Keyword.get_values(options, :formatter) do
-        [] -> options[:formatters] || ["html", "markdown", "epub"]
+        [] -> options[:formatters] || ["html", "markdown", "man", "epub"]
         values -> values
       end
 
