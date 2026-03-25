@@ -1,13 +1,17 @@
-# `<%= node.name %>`
+<%= for entry <- node.equiv_entries do %># `<%= entry.signature %> ≡ <%= entry.equiv_expr %>`
+<%= for annotation <- entry.annotations do %>*<%= annotation %>* <% end %>
+
+<% end %># `<%= node.name %>`
 <%= for annotation <- node.annotations do %>*<%= annotation %>* <% end %>
 
 <%= if deprecated = node.deprecated do %>
 > This <%= node.type %> is deprecated. <%= h(deprecated) %>.
 <% end %>
 
-<%= if node.source_specs != [] do %>
+<% all_source_specs = Enum.flat_map(node.equiv_entries, & &1.source_specs) ++ node.source_specs %>
+<%= if all_source_specs != [] do %>
 ```<%= module.language.highlight_info().language_name %>
-<%= for spec <- node.source_specs do %><%= module.language.format_spec_attribute(node) %> <%= module.language.format_spec(spec) %>
+<%= for spec <- all_source_specs do %><%= module.language.format_spec_attribute(node) %> <%= module.language.format_spec(spec) %>
 <% end %>```
 <% end %>
 

@@ -124,7 +124,7 @@ defmodule ExDoc.Formatter.HTML.Templates do
 
   defp sidebar_entries(group) do
     nodes =
-      for node <- group.docs do
+      Enum.flat_map(group.docs, fn node ->
         id =
           if "struct" in node.annotations do
             node.signature
@@ -138,8 +138,27 @@ defmodule ExDoc.Formatter.HTML.Templates do
 
         deprecated? = not is_nil(node.deprecated)
 
-        %{id: id, title: node.signature, anchor: URI.encode(node.id), deprecated: deprecated?}
-      end
+        main = %{
+          id: id,
+          title: node.signature,
+          anchor: URI.encode(node.id),
+          deprecated: deprecated?
+        }
+
+        equiv =
+          for entry <- node.equiv_entries do
+            entry_id = "#{entry.name}/#{entry.arity}"
+
+            %{
+              id: entry_id,
+              title: entry.signature,
+              anchor: URI.encode(entry.id),
+              deprecated: deprecated?
+            }
+          end
+
+        equiv ++ [main]
+      end)
 
     %{key: text_to_id(group.title), name: group.title, nodes: nodes}
   end

@@ -123,7 +123,44 @@ defmodule ExDoc.Formatter.ErlangTest do
     assert markdown =~ "o/0 opaque."
   end
 
-  defp generate(c) do
+  @tag :otp_eep59
+  test "equiv merged functions", c do
+    erlc(c, :equiv_mod, ~S"""
+    -module(equiv_mod).
+    -moduledoc("equiv module.").
+    -export([foo/1, foo/2]).
+
+    -doc(#{equiv => foo(X, [])}).
+    -spec foo(integer()) -> integer().
+    foo(X) -> foo(X, []).
+
+    -doc("foo/2 docs.").
+    -spec foo(integer(), list()) -> integer().
+    foo(X, _Opts) -> X.
+    """)
+
+    generate(c, :equiv_mod)
+    html = c.tmp_dir |> Path.join("doc/equiv_mod.html") |> File.read!()
+
+    # Equiv entry shown with ≡ marker
+    assert html =~ "≡"
+
+    # Both signatures present
+    assert html =~ "foo(X)"
+    assert html =~ "foo(X, Opts)"
+
+    # Equiv anchor exists
+    assert html =~ ~s|id="foo/1"|
+
+    # Main section uses foo/2 as the primary ID
+    assert html =~ ~s|id="foo/2"|
+
+    # Summary shows both entries
+    assert html =~ ~s|<a href="#foo/1"|
+    assert html =~ ~s|<a href="#foo/2"|
+  end
+
+  defp generate(c, _module \\ nil) do
     config = [
       version: "1.0.0",
       project: "Foo",

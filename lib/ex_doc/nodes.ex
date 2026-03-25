@@ -69,11 +69,24 @@ defmodule ExDoc.DocNode do
             group: nil,
             doc_line: nil,
             doc_file: nil,
-            source_url: nil
+            source_url: nil,
+            equiv_entries: []
 
   @type annotation :: String.t()
   @type function_default :: {name :: atom(), arity :: non_neg_integer()}
   @type spec_ast :: term()
+
+  @type equiv_entry :: %{
+          id: String.t(),
+          name: atom(),
+          arity: non_neg_integer(),
+          signature: String.t(),
+          equiv_expr: String.t(),
+          source_specs: [spec_ast()],
+          specs: [String.t()],
+          source_url: String.t() | nil,
+          annotations: [annotation()]
+        }
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -91,7 +104,8 @@ defmodule ExDoc.DocNode do
           group: String.t() | nil,
           doc_file: String.t(),
           doc_line: non_neg_integer(),
-          source_url: String.t() | nil
+          source_url: String.t() | nil,
+          equiv_entries: [equiv_entry()]
         }
 end
 

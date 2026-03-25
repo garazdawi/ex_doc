@@ -202,15 +202,27 @@ defmodule ExDoc.Retriever do
   defp get_docs(module_data, source, group_for_doc, annotations_for_docs, config) do
     {:docs_v1, _, _, _, _, _, docs} = module_data.docs
 
-    {nodes, groups} =
+    results =
       for doc <- docs,
           doc_data = module_data.language.doc_data(doc, module_data) do
-        {_node, _group} =
+        {node, group} =
           get_doc(doc, doc_data, module_data, source, group_for_doc, annotations_for_docs, config)
-      end
-      |> Enum.unzip()
 
-    {filter_defaults(nodes), groups}
+        equiv_info =
+          case doc_data do
+            %{equiv: {name, arity, expr}, id_key: id_key} ->
+              {id_key <> "#{name}/#{arity}", expr}
+
+            _ ->
+              nil
+          end
+
+        {node, group, equiv_info}
+      end
+
+    {nodes, groups, equiv_infos} = unzip3(results)
+    nodes = nodes |> filter_defaults() |> merge_equiv_nodes(equiv_infos)
+    {nodes, groups}
   end
 
   defp get_doc(doc, doc_data, module_data, source, group_for_doc, annotations_for_docs, config) do
@@ -263,6 +275,72 @@ defmodule ExDoc.Retriever do
     }
 
     {doc_node, group}
+  end
+
+  defp unzip3(list) do
+    :lists.foldr(
+      fn {a, b, c}, {as, bs, cs} -> {[a | as], [b | bs], [c | cs]} end,
+      {[], [], []},
+      list
+    )
+  end
+
+  defp merge_equiv_nodes(nodes, equiv_infos) do
+    equiv_map =
+      Enum.zip(nodes, equiv_infos)
+      |> Enum.filter(fn {_node, info} -> info != nil end)
+      |> Map.new(fn {node, {target_id, expr}} -> {node.id, {target_id, expr}} end)
+
+    nodes_by_id = Map.new(nodes, &{&1.id, &1})
+
+    # Only merge when the equiv target exists in the same module
+    {equivs_by_target, mergeable_ids} =
+      Enum.reduce(equiv_map, {%{}, MapSet.new()}, fn
+        {source_id, {target_id, _}}, {by_target, ids} ->
+          if Map.has_key?(nodes_by_id, target_id) do
+            {Map.update(by_target, target_id, [source_id], &[source_id | &1]),
+             MapSet.put(ids, source_id)}
+          else
+            {by_target, ids}
+          end
+      end)
+
+    Enum.flat_map(nodes, fn node ->
+      if node.id in mergeable_ids do
+        []
+      else
+        equiv_entries =
+          case Map.get(equivs_by_target, node.id) do
+            nil ->
+              []
+
+            equiv_ids ->
+              Enum.map(equiv_ids, fn id ->
+                equiv_node = Map.fetch!(nodes_by_id, id)
+                {_, equiv_expr} = Map.fetch!(equiv_map, id)
+
+                %{
+                  id: equiv_node.id,
+                  name: equiv_node.name,
+                  arity: equiv_node.arity,
+                  signature: equiv_node.signature,
+                  equiv_expr: equiv_expr,
+                  source_specs: equiv_node.source_specs,
+                  specs: [],
+                  source_url: equiv_node.source_url,
+                  annotations: equiv_node.annotations
+                }
+              end)
+              |> Enum.sort_by(fn entry ->
+                # Same-name equivs sort last (adjacent to target), others first
+                same_name = if entry.name == node.name, do: 1, else: 0
+                {same_name, "#{entry.name}/#{entry.arity}"}
+              end)
+          end
+
+        [%{node | equiv_entries: equiv_entries}]
+      end
+    end)
   end
 
   defp get_defaults(_name, _arity, 0), do: []

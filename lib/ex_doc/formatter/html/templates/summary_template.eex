@@ -3,6 +3,13 @@
     <a href="#<%=h text_to_id(name) %>"><%= name %></a>
   </h3>
   <%= for node <- nodes do %>
+    <%= for entry <- node.equiv_entries do %>
+      <div class="summary-row">
+        <div class="summary-signature">
+          <a href="#<%=enc entry.id %>" data-no-tooltip="" translate="no"><%=h entry.signature %></a>
+        </div>
+      </div>
+    <% end %>
     <div class="summary-row">
       <div class="summary-signature">
         <a href="#<%=enc node.id %>" data-no-tooltip="" translate="no"><%=h node.signature %></a>

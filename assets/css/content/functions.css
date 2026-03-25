@@ -35,6 +35,34 @@ in both HTML and ePub. */
   margin: 0 !important;
 }
 
+.content-inner .detail-header .signature-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.content-inner .detail-header .signature-row > *:not(h1) {
+  flex-shrink: 0;
+}
+
+.content-inner .detail-header .signature-row h1 {
+  flex-grow: 1;
+}
+
+.content-inner .detail-header .signature:has(.signature-result) {
+  padding-left: 2em;
+  text-indent: -2em;
+}
+
+.content-inner .detail-header .signature .signature-arrow {
+  white-space: nowrap;
+}
+
+.content-inner .detail-header .signature .signature-result {
+  display: inline-block;
+  text-indent: 0;
+}
 .content-inner .detail-header:hover a.detail-link,
 .content-inner .detail-header a.detail-link:focus {
   opacity: 1;

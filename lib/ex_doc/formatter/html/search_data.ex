@@ -58,7 +58,14 @@ defmodule ExDoc.Formatter.HTML.SearchData do
     {intro, sections} = extract_sections(module_node.source_format, node, node.id <> "-")
 
     child = encode("#{page}##{URI.encode(node.id)}", title, node.type, intro)
-    [child | render_sections(sections, page, title, node.type)]
+
+    equiv_children =
+      for entry <- node.equiv_entries do
+        equiv_title = "#{module_node.id}.#{entry.name}/#{entry.arity}"
+        encode("#{page}##{URI.encode(entry.id)}", equiv_title, node.type, intro)
+      end
+
+    [child | equiv_children] ++ render_sections(sections, page, title, node.type)
   end
 
   defp encode(ref, title, type, doc) do

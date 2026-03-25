@@ -59,7 +59,7 @@ defmodule ExDoc.Retriever.ErlangTest do
                moduledoc_line: 2,
                moduledoc_file: moduledoc_file,
                docs_groups: [
-                 %DocGroupNode{title: "Functions", docs: [equiv_function2, function1, function2]}
+                 %DocGroupNode{title: "Functions", docs: [function1, function2]}
                ],
                group: nil,
                id: "mod",
@@ -105,10 +105,116 @@ defmodule ExDoc.Retriever.ErlangTest do
       assert DocAST.to_html(function2.doc) =~ "function2/1 docs."
       assert function2.source_specs == []
 
-      %ExDoc.DocNode{id: "equiv_function2/0"} = equiv_function2
+      assert [equiv_entry] = function2.equiv_entries
+      assert equiv_entry.id == "equiv_function2/0"
+      assert equiv_entry.signature == "equiv_function2()"
+      assert equiv_entry.equiv_expr == "function2([{test, args}])"
+    end
 
-      assert DocAST.to_html(equiv_function2.doc) =~
-               ~r'Equivalent to <a href="`function2/1`"><code[^>]+>function2\(\[\{test, args\}\]\).*\.'
+    test "equiv same name different arity", c do
+      erlc(c, :mod, ~S"""
+      -module(mod).
+      -moduledoc("").
+      -export([foo/1, foo/2]).
+
+      -doc #{ equiv => foo(X, []) }.
+      -spec foo(integer()) -> integer().
+      foo(X) -> foo(X, []).
+
+      -doc("foo/2 docs.").
+      -spec foo(integer(), list()) -> integer().
+      foo(X, Opts) -> {X, Opts}.
+      """)
+
+      {[mod], []} = Retriever.docs_from_modules([:mod], default_config())
+      [%{docs: [foo2]}] = mod.docs_groups
+
+      assert foo2.id == "foo/2"
+      assert DocAST.to_html(foo2.doc) =~ "foo/2 docs."
+
+      assert [equiv_entry] = foo2.equiv_entries
+      assert equiv_entry.id == "foo/1"
+      assert equiv_entry.signature == "foo(X)"
+      assert equiv_entry.equiv_expr == "foo(X, [])"
+      assert length(equiv_entry.source_specs) == 1
+    end
+
+    test "multiple equivs to same target", c do
+      erlc(c, :mod, ~S"""
+      -module(mod).
+      -moduledoc("").
+      -export([foo/1, foo/2, foo/3]).
+
+      -doc #{ equiv => foo(A, b, []) }.
+      foo(A) -> foo(A, b, []).
+
+      -doc #{ equiv => foo(A, B, []) }.
+      foo(A, B) -> foo(A, B, []).
+
+      -doc("foo/3 docs.").
+      foo(A, B, C) -> {A, B, C}.
+      """)
+
+      {[mod], []} = Retriever.docs_from_modules([:mod], default_config())
+      [%{docs: [foo3]}] = mod.docs_groups
+
+      assert foo3.id == "foo/3"
+      assert length(foo3.equiv_entries) == 2
+
+      [entry1, entry2] = foo3.equiv_entries
+      assert entry1.id == "foo/1"
+      assert entry2.id == "foo/2"
+    end
+
+    test "equiv entries sorted with same-name last", c do
+      erlc(c, :mod, ~S"""
+      -module(mod).
+      -moduledoc("").
+      -export([exit_after/2, exit_after/3, kill_after/1, kill_after/2]).
+
+      -doc #{ equiv => exit_after(Time, self(), Reason) }.
+      exit_after(Time, Reason) -> exit_after(Time, self(), Reason).
+
+      -doc #{ equiv => exit_after(Time, Target, kill) }.
+      kill_after(Time, Target) -> exit_after(Time, Target, kill).
+
+      -doc #{ equiv => exit_after(Time, self(), kill) }.
+      kill_after(Time) -> exit_after(Time, self(), kill).
+
+      -doc("exit_after/3 docs.").
+      exit_after(Time, Target, Reason) -> {Time, Target, Reason}.
+      """)
+
+      {[mod], []} = Retriever.docs_from_modules([:mod], default_config())
+      [%{docs: [exit_after]}] = mod.docs_groups
+
+      assert exit_after.id == "exit_after/3"
+      assert length(exit_after.equiv_entries) == 3
+
+      # Different-name equivs come first, same-name last
+      [e1, e2, e3] = exit_after.equiv_entries
+      assert e1.name == :kill_after
+      assert e2.name == :kill_after
+      assert e3.name == :exit_after
+      assert e3.arity == 2
+    end
+
+    test "equiv target not in module stays separate", c do
+      erlc(c, :mod, ~S"""
+      -module(mod).
+      -moduledoc("").
+      -export([foo/1]).
+
+      -doc #{ equiv => lists:reverse(X) }.
+      foo(X) -> lists:reverse(X).
+      """)
+
+      {[mod], []} = Retriever.docs_from_modules([:mod], default_config())
+      [%{docs: [foo]}] = mod.docs_groups
+
+      assert foo.id == "foo/1"
+      assert foo.equiv_entries == []
+      assert DocAST.to_html(foo.doc) =~ "Equivalent to"
     end
 
     test "module included files", c do
@@ -243,7 +349,7 @@ defmodule ExDoc.Retriever.ErlangTest do
       """)
 
       {[mod], []} = Retriever.docs_from_modules([:mod], default_config())
-      [%{docs: [callback1, equiv_callback1, optional_callback1]}] = mod.docs_groups
+      [%{docs: [callback1, optional_callback1]}] = mod.docs_groups
 
       assert callback1.id == "c:callback1/0"
       assert callback1.type == :callback
@@ -255,15 +361,11 @@ defmodule ExDoc.Retriever.ErlangTest do
       assert format_spec(hd(callback1.source_specs)) ==
                "callback1() -> atom()."
 
-      assert equiv_callback1.id == "c:equiv_callback1/0"
-      assert equiv_callback1.type == :callback
-      assert equiv_callback1.annotations == []
-      assert equiv_callback1.group == "Callbacks"
-
-      assert DocAST.to_html(equiv_callback1.doc) =~
-               ~r'Equivalent to <a href="`c:callback1/0`"><code[^>]+>callback1().*\.'
-
-      assert Path.basename(equiv_callback1.source_url) == "mod.erl:7"
+      assert [equiv_entry] = callback1.equiv_entries
+      assert equiv_entry.id == "c:equiv_callback1/0"
+      assert equiv_entry.signature == "equiv_callback1()"
+      assert equiv_entry.equiv_expr == "callback1()"
+      assert Path.basename(equiv_entry.source_url) == "mod.erl:7"
 
       assert optional_callback1.id == "c:optional_callback1/0"
       assert optional_callback1.type == :callback

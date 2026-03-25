@@ -103,6 +103,7 @@ defmodule ExDoc.Language.Erlang do
       id_key: "",
       default_group: "Functions",
       doc_fallback: fn -> equiv_data(module_data.module, file, line, metadata) end,
+      equiv: parse_equiv_target(metadata),
       extra_annotations: [],
       signature: signature,
       source_file: file,
@@ -132,6 +133,7 @@ defmodule ExDoc.Language.Erlang do
       id_key: "c:",
       default_group: "Callbacks",
       doc_fallback: fn -> equiv_data(module_data.module, file, line, metadata, "c:") end,
+      equiv: parse_equiv_target(metadata),
       extra_annotations: extra_annotations,
       signature: signature,
       source_file: file,
@@ -149,6 +151,7 @@ defmodule ExDoc.Language.Erlang do
       id_key: "t:",
       default_group: "Types",
       doc_fallback: fn -> equiv_data(module_data.module, file, line, metadata, "t:") end,
+      equiv: parse_equiv_target(metadata),
       extra_annotations: [],
       signature: signature,
       source_file: file,
@@ -158,24 +161,37 @@ defmodule ExDoc.Language.Erlang do
     }
   end
 
+  defp parse_equiv_target(metadata) do
+    case metadata[:equiv] do
+      equiv when is_binary(equiv) ->
+        case parse_equiv_expr(equiv) do
+          {:call, func, arity} -> {func, arity, equiv}
+          {:name_arity, name, arity} -> {name, arity, equiv}
+          :error -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
   defp equiv_data(module, file, line, metadata, prefix \\ "") do
     case metadata[:equiv] do
       nil ->
         nil
 
       equiv when is_binary(equiv) ->
-        ## We try to parse the equiv in order to link to the target
-        with {:ok, toks, _} <- :erl_scan.string(:unicode.characters_to_list(equiv <> ".")),
-             {:ok, [{:call, _, {:atom, _, func}, args}]} <- :erl_parse.parse_exprs(toks) do
-          equivalent_to(
-            {:a, [href: "`#{prefix}#{func}/#{length(args)}`"],
-             [{:code, [class: "inline"], [equiv], %{}}], %{}}
-          )
-        else
-          {:ok, [{:op, _, :/, {:atom, _, _}, {:integer, _, _}}]} ->
+        case parse_equiv_expr(equiv) do
+          {:call, func, arity} ->
+            equivalent_to(
+              {:a, [href: "`#{prefix}#{func}/#{arity}`"],
+               [{:code, [class: "inline"], [equiv], %{}}], %{}}
+            )
+
+          {:name_arity, _, _} ->
             equivalent_to({:code, [class: "inline"], ["#{prefix}#{equiv}"], %{}})
 
-          _ ->
+          :error ->
             equivalent_to({:code, [class: "inline"], [equiv], %{}})
         end
 
@@ -187,6 +203,19 @@ defmodule ExDoc.Language.Erlang do
         )
 
         nil
+    end
+  end
+
+  defp parse_equiv_expr(equiv) do
+    with {:ok, toks, _} <- :erl_scan.string(:unicode.characters_to_list(equiv <> ".")),
+         {:ok, [{:call, _, {:atom, _, func}, args}]} <- :erl_parse.parse_exprs(toks) do
+      {:call, func, length(args)}
+    else
+      {:ok, [{:op, _, :/, {:atom, _, name}, {:integer, _, arity}}]} ->
+        {:name_arity, name, arity}
+
+      _ ->
+        :error
     end
   end
 
