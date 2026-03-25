@@ -32,16 +32,10 @@ defmodule ExDoc.Formatter.ErlangTest do
     generate(c)
     html = c.tmp_dir |> Path.join("doc/foo.html") |> File.read!()
 
-    # Check specs are rendered with proper links in HTML
-    assert html =~
-             ~s|-spec</span> foo(<a href="#t:t/0">t</a>()) -> <a href="#t:t/0">t</a>().|
-
-    assert html =~
-             ~s|-spec</span> bar() -> baz.|
+    # Check simple specs are inlined in the signature with autolinks
+    assert html =~ ~s|<a href="#t:t/0">t</a>()|
 
     # Check types are rendered with proper links in HTML
-    assert html =~
-             ~s|-type</span> t() :: <a href="https://www.erlang.org/doc/apps/erts/erlang.html#t:atom/0">atom</a>().|
 
     assert html =~
              ~s|-type</span> t2() :: #rec{k1 :: <a href="https://www.erlang.org/doc/apps/stdlib/uri_string.html#t:uri_string/0">uri_string:uri_string</a>(), k2 :: <a href="https://www.erlang.org/doc/apps/stdlib/uri_string.html#t:uri_string/0">uri_string:uri_string</a>() \| undefined}.|
@@ -83,12 +77,8 @@ defmodule ExDoc.Formatter.ErlangTest do
     assert html =~ "<p>bar/1 function.</p>"
     assert html =~ "<p>baz/0 function.</p>"
 
-    # Check specs are rendered with proper links in HTML
-    assert html =~
-             ~s|-spec</span> bar(<a href="#t:t/0">t</a>()) -> <a href="#t:t/0">t</a>().|
-
-    assert html =~
-             ~s|-spec</span> baz() -> <a href="https://www.erlang.org/doc/apps/erts/erlang.html#t:atom/0">atom</a>().|
+    # Check simple specs are inlined in the signature with autolinks
+    assert html =~ ~s|<a href="#t:t/0">t</a>()|
 
     # Check type is rendered with proper links in HTML
     assert html =~
@@ -107,7 +97,7 @@ defmodule ExDoc.Formatter.ErlangTest do
     assert markdown =~ "bar/1 function."
     assert markdown =~ "baz/0 function."
 
-    # Check specs in markdown use erlang code fences
+    # Check specs in markdown (markdown doesn't go through autolink, uses raw format)
     assert markdown =~ "```erlang\n-spec bar(t()) -> t()."
     assert markdown =~ "```erlang\n-spec baz() -> atom()."
 
@@ -121,6 +111,58 @@ defmodule ExDoc.Formatter.ErlangTest do
     assert markdown =~ "```erlang\n-opaque o()\n```"
     refute markdown =~ "o() ::"
     assert markdown =~ "o/0 opaque."
+  end
+
+  @tag :otp_eep59
+  test "spec rendering styles", c do
+    erlc(c, :spec_mod, ~S"""
+    -module(spec_mod).
+    -moduledoc("spec module.").
+    -export([inlined/2, decomposed/2, multi_clause/1, stripped/3]).
+
+    -doc("Inlined spec.").
+    -spec inlined(binary(), non_neg_integer()) -> byte().
+    inlined(S, P) -> binary:at(S, P).
+
+    -doc("Decomposed spec.").
+    -spec decomposed(Subject, Endianness) -> Unsigned when
+        Subject :: binary(),
+        Endianness :: big | little | {custom, binary()},
+        Unsigned :: non_neg_integer().
+    decomposed(S, _E) -> binary:decode_unsigned(S).
+
+    -doc("Multi-clause spec.").
+    -spec multi_clause(atom()) -> integer(); (integer()) -> atom().
+    multi_clause(X) when is_atom(X) -> 42;
+    multi_clause(X) when is_integer(X) -> ok.
+
+    -doc("Stripped signature.").
+    stripped(_, _, _) -> ok.
+    """)
+
+    generate(c, :spec_mod)
+    html = c.tmp_dir |> Path.join("doc/spec_mod.html") |> File.read!()
+
+    # Inlined spec: types shown in signature with links
+    assert html =~ ~s|inlined(S :: |
+
+    assert html =~
+             ~s|<a href="https://www.erlang.org/doc/apps/erts/erlang.html#t:byte/0">byte</a>()|
+
+    # Decomposed spec: Types section with heading
+    assert html =~ ~s|<h4 class="specs-title">Types</h4>|
+    assert html =~ ~s|Subject = |
+    assert html =~ ~s|Unsigned = |
+
+    # Decomposed spec: signature includes return type
+    assert html =~ ~s|decomposed(Subject, Endianness)|
+    assert html =~ ~s|Unsigned|
+
+    # Multi-clause spec: falls back to -spec rendering
+    assert html =~ ~s|-spec</span> multi_clause|
+
+    # Stripped signature: falls back to -spec rendering
+    assert html =~ ~s|stripped/3|
   end
 
   @tag :otp_eep59

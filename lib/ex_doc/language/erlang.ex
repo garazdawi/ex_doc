@@ -513,6 +513,276 @@ defmodule ExDoc.Language.Erlang do
     end
   end
 
+  @doc false
+  def decompose_spec(spec_ast, signature) do
+    {:attribute, _anno, _kind, {_mfa, clauses}} = spec_ast
+    sig_args = parse_signature_args(signature)
+
+    Enum.map(clauses, &decompose_clause(&1, sig_args, signature))
+  end
+
+  defp decompose_clause(clause, sig_args, signature) do
+    {args, result, constraints} = extract_clause_parts(clause)
+
+    check_arg_names(args, sig_args, signature)
+
+    constraint_map =
+      Map.new(constraints, fn {:type, _, :constraint,
+                               [{:atom, _, :is_subtype}, [{:var, _, var_name}, type_ast]]} ->
+        {var_name, type_ast}
+      end)
+
+    arg_types = extract_arg_types(args, sig_args, constraint_map)
+
+    used_names =
+      MapSet.new(
+        Enum.map(sig_args, &String.to_atom/1) ++
+          Map.keys(constraint_map) ++
+          collect_type_vars(result)
+      )
+
+    {return_name, return_type, inline_return_ast} =
+      extract_return_type(result, constraint_map, used_names)
+
+    types =
+      if return_type do
+        arg_types ++ [{return_name, return_type}]
+      else
+        arg_types
+      end
+
+    covered = MapSet.new(types, fn {name, _} -> name end)
+
+    extra_types =
+      constraint_map
+      |> Enum.reject(fn {var_name, _} -> Atom.to_string(var_name) in covered end)
+      |> Enum.map(fn {var_name, type_ast} -> {Atom.to_string(var_name), type_ast} end)
+
+    types = types ++ extra_types
+
+    inlined_signature = build_inlined_signature(signature, arg_types, result)
+
+    %{
+      signature: signature,
+      inlined_signature: inlined_signature,
+      return_name: return_name,
+      inline_return_ast: inline_return_ast,
+      arg_types: arg_types,
+      types: types
+    }
+  end
+
+  defp check_arg_names(args, sig_args, signature) do
+    spec_names =
+      Enum.map(args, fn
+        {:var, _, name} -> Atom.to_string(name)
+        {:ann_type, _, [{:var, _, name}, _]} -> Atom.to_string(name)
+        _ -> nil
+      end)
+
+    mismatches =
+      Enum.zip(sig_args, spec_names)
+      |> Enum.filter(fn
+        {_, nil} -> false
+        {sig_name, spec_name} -> sig_name != spec_name
+      end)
+
+    if mismatches != [] do
+      pairs = Enum.map_join(mismatches, ", ", fn {s, p} -> "\"#{s}\" vs \"#{p}\"" end)
+      IO.warn("spec argument names do not match signature in #{signature}: #{pairs}", [])
+    end
+  end
+
+  @max_inlined_signature_length 80
+
+  defp build_inlined_signature(signature, arg_types, result) do
+    name = signature |> String.split("(", parts: 2) |> hd()
+
+    inlined_args =
+      Enum.map_join(arg_types, ", ", fn {var_name, type_ast} ->
+        "#{var_name} :: #{format_type_expr(type_ast)}"
+      end)
+
+    return_str = format_type_expr(result)
+    inlined = "#{name}(#{inlined_args}) -> #{return_str}"
+
+    if String.length(inlined) <= @max_inlined_signature_length do
+      inlined
+    else
+      nil
+    end
+  end
+
+  defp extract_clause_parts({:type, _, :bounded_fun, [fun_type, constraints]}) do
+    {:type, _, :fun, [{:type, _, :product, args}, result]} = fun_type
+    {args, result, constraints}
+  end
+
+  defp extract_clause_parts({:type, _, :fun, [{:type, _, :product, args}, result]}) do
+    {args, result, []}
+  end
+
+  defp extract_arg_types(args, sig_args, constraint_map) do
+    args
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {arg, index} ->
+      case arg do
+        {:var, _, var_name} ->
+          case Map.get(constraint_map, var_name) do
+            nil -> []
+            type_ast -> [{Atom.to_string(var_name), type_ast}]
+          end
+
+        {:ann_type, _, [{:var, _, var_name}, type_ast]} ->
+          [{Atom.to_string(var_name), type_ast}]
+
+        # Concrete type with no variable name — use the name from the signature
+        type_ast ->
+          var_name = Enum.at(sig_args, index, "Arg#{index + 1}")
+          [{var_name, type_ast}]
+      end
+    end)
+  end
+
+  # Returns {name, type_ast_for_types_section, inline_return_ast} where:
+  # - name: variable name string, or nil for inline returns
+  # - type_ast_for_types_section: type AST for the Types section, or nil
+  # - inline_return_ast: type AST to render inline in the signature, or nil
+  @return_name_candidates ~w(Result Ret Res Return Value Out)
+
+  defp extract_return_type({:var, _, var_name}, constraint_map, _used_names) do
+    case Map.get(constraint_map, var_name) do
+      nil -> {Atom.to_string(var_name), nil, nil}
+      type_ast -> {Atom.to_string(var_name), type_ast, nil}
+    end
+  end
+
+  defp extract_return_type(
+         {:ann_type, _, [{:var, _, var_name}, type_ast]},
+         _constraint_map,
+         _used_names
+       ) do
+    {Atom.to_string(var_name), type_ast, nil}
+  end
+
+  defp extract_return_type(type_ast, _constraint_map, used_names) do
+    formatted = format_type_expr(type_ast)
+
+    if String.length(formatted) < 20 do
+      {nil, nil, type_ast}
+    else
+      name = pick_return_name(used_names)
+      {name, type_ast, nil}
+    end
+  end
+
+  defp pick_return_name(used_names) do
+    Enum.find(@return_name_candidates, "Result", fn name ->
+      String.to_atom(name) not in used_names
+    end)
+  end
+
+  defp collect_type_vars({:var, _, name}), do: [name]
+  defp collect_type_vars({:ann_type, _, [{:var, _, name} | _]}), do: [name]
+
+  defp collect_type_vars(tuple) when is_tuple(tuple) do
+    tuple |> Tuple.to_list() |> Enum.flat_map(&collect_type_vars/1)
+  end
+
+  defp collect_type_vars(list) when is_list(list) do
+    Enum.flat_map(list, &collect_type_vars/1)
+  end
+
+  defp collect_type_vars(_), do: []
+
+  @doc false
+  def format_type_expr(type_ast) do
+    synthetic_type_attr(type_ast)
+    |> :erl_pp.attribute()
+    |> IO.chardata_to_string()
+    |> String.trim()
+    |> String.trim_leading("-type ")
+    |> String.trim_trailing(".")
+    |> strip_synthetic_prefix()
+  end
+
+  defp synthetic_type_attr(type_ast) do
+    {:attribute, :erl_anno.new(0), :type, {:exdocTmp, type_ast, []}}
+  end
+
+  defp parse_signature_args(signature) do
+    # Extract variable names from signature like "foo(Subject, Endianness)"
+    case Regex.run(~r/\(([^)]*)\)/, signature) do
+      [_, args_str] ->
+        args_str
+        |> String.split(",")
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+
+      _ ->
+        []
+    end
+  end
+
+  @doc false
+  def autolink_type(type_ast, config) do
+    synthetic_type_attr(type_ast)
+    |> autolink_spec(config)
+    |> String.trim_trailing(".")
+    |> strip_synthetic_prefix()
+  end
+
+  defp strip_annos(tuple) when is_tuple(tuple) do
+    tuple
+    |> Tuple.to_list()
+    |> Enum.with_index()
+    |> Enum.map(fn
+      {_anno, 1} -> 0
+      {elem, _} -> strip_annos(elem)
+    end)
+    |> List.to_tuple()
+  end
+
+  defp strip_annos(list) when is_list(list), do: Enum.map(list, &strip_annos/1)
+  defp strip_annos(other), do: other
+
+  defp strip_synthetic_prefix(string) do
+    String.replace(string, ~r/^exdocTmp\(\)\s*::\s*/, "")
+  end
+
+  @doc false
+  def collect_spec_types(decomposed_clauses) do
+    all_types =
+      decomposed_clauses
+      |> Enum.flat_map(& &1.types)
+      |> Enum.uniq_by(fn {var, _type_ast} -> var end)
+
+    # Group variables that share the same type AST, preserving order.
+    # Compare ASTs without annotations (line numbers differ across specs).
+    {result, _seen} =
+      Enum.reduce(all_types, {[], %{}}, fn {var, type_ast}, {acc, seen} ->
+        key = strip_annos(type_ast)
+
+        case Map.get(seen, key) do
+          nil ->
+            {acc ++ [{var, type_ast}], Map.put(seen, key, var)}
+
+          existing_var ->
+            merged = existing_var <> " = " <> var
+
+            acc =
+              Enum.map(acc, fn
+                {^existing_var, t} -> {merged, t}
+                other -> other
+              end)
+
+            {acc, Map.put(seen, key, merged)}
+        end
+      end)
+
+    result
+  end
+
   @impl true
   def format_spec(ast) do
     {:attribute, _, type, _} = ast

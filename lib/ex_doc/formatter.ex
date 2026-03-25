@@ -258,7 +258,19 @@ defmodule ExDoc.Formatter do
                 %{entry | specs: entry_specs}
               end)
 
-            child_node = %{child_node | specs: specs, equiv_entries: equiv_entries}
+            rendered_spec_info =
+              if language == ExDoc.Language.Erlang and
+                   child_node.type in [:function, :callback] do
+                render_erlang_spec_info(child_node, equiv_entries, child_config)
+              end
+
+            child_node = %{
+              child_node
+              | specs: specs,
+                equiv_entries: equiv_entries,
+                rendered_spec_info: rendered_spec_info
+            }
+
             autolink_doc(child_node, language, child_config, highlight_opts)
           end
 
@@ -276,6 +288,114 @@ defmodule ExDoc.Formatter do
       autolink_doc(node, language, module_config, highlight_opts)
       | docs_groups: docs_groups
     }
+  end
+
+  defp render_erlang_spec_info(child_node, equiv_entries, config) do
+    # Main spec first so its types take precedence in deduplication
+    all_source_specs =
+      child_node.source_specs ++ Enum.flat_map(equiv_entries, & &1.source_specs)
+
+    has_multi_clause =
+      Enum.any?(all_source_specs, fn {:attribute, _, _, {_, clauses}} ->
+        length(clauses) > 1
+      end)
+
+    cond do
+      all_source_specs == [] ->
+        nil
+
+      # Stripped signature like "open/3"
+      not String.contains?(child_node.signature, "(") ->
+        nil
+
+      has_multi_clause ->
+        nil
+
+      true ->
+        render_single_clause_spec_info(child_node, all_source_specs, config)
+    end
+  end
+
+  defp render_single_clause_spec_info(child_node, all_source_specs, config) do
+    all_decomposed =
+      Enum.flat_map(all_source_specs, fn spec_ast ->
+        ExDoc.Language.Erlang.decompose_spec(spec_ast, child_node.signature)
+      end)
+
+    main = List.first(all_decomposed)
+
+    case main do
+      %{inlined_signature: inlined} when inlined != nil ->
+        render_inlined_spec_info(main, all_decomposed, config)
+
+      _ ->
+        render_decomposed_spec_info(main, all_decomposed, config)
+    end
+  end
+
+  defp render_inlined_spec_info(main, all_decomposed, config) do
+    autolinked_args =
+      Enum.map_join(main.arg_types, ", ", fn {var_name, type_ast} ->
+        "#{ExDoc.Utils.h(var_name)} :: #{ExDoc.Language.Erlang.autolink_type(type_ast, config)}"
+      end)
+
+    name = main.signature |> String.split("(", parts: 2) |> hd()
+
+    autolinked_return =
+      cond do
+        main.inline_return_ast ->
+          ExDoc.Language.Erlang.autolink_type(main.inline_return_ast, config)
+
+        main.return_name ->
+          ExDoc.Utils.h(main.return_name)
+
+        true ->
+          nil
+      end
+
+    autolinked_head =
+      if autolinked_return do
+        "#{ExDoc.Utils.h(name)}(#{autolinked_args})<span class=\"signature-arrow\">&nbsp;-&gt;&nbsp;</span><span class=\"signature-result\">#{autolinked_return}</span>"
+      else
+        "#{ExDoc.Utils.h(name)}(#{autolinked_args})"
+      end
+
+    inlined_vars = MapSet.new(main.arg_types, fn {var, _} -> var end)
+
+    all_types =
+      all_decomposed
+      |> ExDoc.Language.Erlang.collect_spec_types()
+      |> Enum.reject(fn {var_name, _} -> var_name in inlined_vars end)
+      |> autolink_types(config)
+
+    %{types: all_types, head: autolinked_head, inline_return: nil, head_html: true}
+  end
+
+  defp render_decomposed_spec_info(main, all_decomposed, config) do
+    all_types =
+      all_decomposed
+      |> ExDoc.Language.Erlang.collect_spec_types()
+      |> autolink_types(config)
+
+    {head, inline_return} =
+      case main do
+        %{signature: sig, return_name: name, inline_return_ast: nil} when name != nil ->
+          {sig <> " -> " <> name, nil}
+
+        %{signature: sig, inline_return_ast: type_ast} when type_ast != nil ->
+          {sig <> " -> ", ExDoc.Language.Erlang.autolink_type(type_ast, config)}
+
+        %{signature: sig} ->
+          {sig, nil}
+      end
+
+    %{types: all_types, head: head, inline_return: inline_return, head_html: false}
+  end
+
+  defp autolink_types(types, config) do
+    Enum.map(types, fn {var_name, type_ast} ->
+      {var_name, ExDoc.Language.Erlang.autolink_type(type_ast, config)}
+    end)
   end
 
   defp autolink_doc(%{doc: nil} = node, _language, _autolink_opts, _opts),

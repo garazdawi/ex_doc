@@ -70,7 +70,8 @@ defmodule ExDoc.DocNode do
             doc_line: nil,
             doc_file: nil,
             source_url: nil,
-            equiv_entries: []
+            equiv_entries: [],
+            rendered_spec_info: nil
 
   @type annotation :: String.t()
   @type function_default :: {name :: atom(), arity :: non_neg_integer()}

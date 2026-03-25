@@ -870,6 +870,120 @@ defmodule ExDoc.Language.ErlangTest do
     end
   end
 
+  describe "decompose_spec/2" do
+    test "spec with when clause", _c do
+      ast = parse_spec("-spec foo(X) -> Y when X :: atom(), Y :: integer().")
+      [clause] = ExDoc.Language.Erlang.decompose_spec(ast, "foo(X)")
+
+      assert clause.signature == "foo(X)"
+      assert clause.return_name == "Y"
+      assert [{"X", _}, {"Y", _}] = clause.types
+    end
+
+    test "spec with concrete types uses signature names", _c do
+      ast = parse_spec("-spec foo(binary(), non_neg_integer()) -> byte().")
+      [clause] = ExDoc.Language.Erlang.decompose_spec(ast, "foo(Subject, Pos)")
+
+      assert [{"Subject", _}, {"Pos", _}] = clause.arg_types
+      # byte() is < 20 chars, so inline
+      assert clause.inline_return_ast != nil
+      assert clause.return_name == nil
+    end
+
+    test "spec with annotated return type", _c do
+      ast = parse_spec("-spec foo(binary()) -> Result :: term().")
+      [clause] = ExDoc.Language.Erlang.decompose_spec(ast, "foo(Subject)")
+
+      assert clause.return_name == "Result"
+      assert [{"Subject", _}, {"Result", _}] = clause.types
+    end
+
+    test "inlined signature when short enough", _c do
+      ast = parse_spec("-spec foo(binary()) -> byte().")
+      [clause] = ExDoc.Language.Erlang.decompose_spec(ast, "foo(X)")
+
+      assert clause.inlined_signature != nil
+      assert clause.inlined_signature =~ "foo("
+      assert clause.inlined_signature =~ "-> byte()"
+    end
+
+    test "no inlined signature when too long", _c do
+      ast =
+        parse_spec(
+          "-spec foo(binary(), non_neg_integer(), atom(), list(), map()) -> {ok, binary()} | {error, term()}."
+        )
+
+      [clause] = ExDoc.Language.Erlang.decompose_spec(ast, "foo(A, B, C, D, E)")
+
+      assert clause.inlined_signature == nil
+    end
+
+    test "extra when constraints included", _c do
+      ast =
+        parse_spec(
+          "-spec foo(ListenSocket, Timeout) -> {ok, Socket} | {error, Reason} when ListenSocket :: port(), Timeout :: timeout(), Socket :: port(), Reason :: closed | timeout."
+        )
+
+      [clause] = ExDoc.Language.Erlang.decompose_spec(ast, "foo(ListenSocket, Timeout)")
+
+      type_names = Enum.map(clause.types, &elem(&1, 0))
+      assert "Socket" in type_names
+      assert "Reason" in type_names
+    end
+  end
+
+  describe "collect_spec_types/1" do
+    test "deduplicates by variable name", _c do
+      ast1 = parse_spec("-spec foo(X) -> Y when X :: atom(), Y :: integer().")
+      ast2 = parse_spec("-spec foo(X) -> Y when X :: binary(), Y :: float().")
+      clauses1 = ExDoc.Language.Erlang.decompose_spec(ast1, "foo(X)")
+      clauses2 = ExDoc.Language.Erlang.decompose_spec(ast2, "foo(X)")
+
+      types = ExDoc.Language.Erlang.collect_spec_types(clauses1 ++ clauses2)
+      names = Enum.map(types, &elem(&1, 0))
+
+      # First occurrence wins
+      assert length(names) == length(Enum.uniq(names))
+    end
+
+    test "merges variables with same type", _c do
+      ast =
+        parse_spec(
+          "-spec foo(List1, List2) -> List3 when List1 :: [T], List2 :: [T], List3 :: [T], T :: term()."
+        )
+
+      clauses = ExDoc.Language.Erlang.decompose_spec(ast, "foo(List1, List2)")
+
+      types = ExDoc.Language.Erlang.collect_spec_types(clauses)
+      merged = Enum.find(types, fn {name, _} -> String.contains?(name, " = ") end)
+      assert merged != nil
+    end
+  end
+
+  describe "autolink_type/2" do
+    test "produces links for known types", _c do
+      type_ast = {:type, 0, :binary, []}
+
+      config =
+        struct!(ExDoc.Autolink,
+          current_module: :erlang_bar,
+          current_kfa: {:function, :bar, 1},
+          file: "test.erl",
+          line: 1,
+          language: ExDoc.Language.Erlang
+        )
+
+      result = ExDoc.Language.Erlang.autolink_type(type_ast, config)
+      assert result =~ "binary"
+    end
+  end
+
+  defp parse_spec(binary) do
+    {:ok, tokens, _} = :erl_scan.string(String.to_charlist(binary))
+    {:ok, ast} = :erl_parse.parse_form(tokens)
+    ast
+  end
+
   defp autolink_spec(binary, _c, opts \\ []) when is_binary(binary) do
     config =
       opts
