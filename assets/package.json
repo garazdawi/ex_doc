@@ -14,7 +14,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "build:watch": "npm run build --watch",
-    "build": "node build/build.js"
+    "build": "node build/build.js",
+    "test:layout": "npx playwright test --config playwright.config.js",
+    "test:layout:update": "npx playwright test --config playwright.config.js --update-snapshots"
   },
   "repository": {
     "type": "git",
@@ -30,8 +32,10 @@
   "devDependencies": {
     "@fontsource-variable/inconsolata": "^5.1.1",
     "@fontsource/lato": "^4.5.10",
+    "@playwright/test": "^1.58.2",
     "@swup/a11y-plugin": "^5.0.0",
     "@swup/progress-plugin": "^3.2.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "esbuild": "^0.27.2",
     "eslint": "^8.31.0",
     "eslint-config-standard": "^17.0.0",
@@ -45,7 +49,6 @@
     "lunr": "^2.3.8",
     "modern-normalize": "^3.0.1",
     "swup": "^4.8.1",
-    "@vitest/coverage-v8": "^3.0.0",
     "vitest": "^3.0.0"
   }
 }
